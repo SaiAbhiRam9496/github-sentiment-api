@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GitHub PR Sentiment Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f11;
+    --surface: #14171a;
+    --surface2: #1c2026;
+    --border: rgba(255,255,255,0.07);
+    --border-strong: rgba(255,255,255,0.14);
+    --text: #e8eaed;
+    --muted: #7a8390;
+    --accent: #00d9a3;
+    --accent-dim: rgba(0,217,163,0.12);
+    --accent-glow: rgba(0,217,163,0.25);
+    --red: #ff5e5e;
+    --red-dim: rgba(255,94,94,0.12);
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 680px;
+  }
+
+  /* Header */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid rgba(0,217,163,0.2);
+    border-radius: 100px;
+    padding: 4px 12px;
+    margin-bottom: 1.5rem;
+  }
+
+  .chip::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 0.5rem;
+    color: var(--text);
+  }
+
+  h1 span { color: var(--accent); }
+
+  .about {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.75rem 0 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .about::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 3px 0 0 3px;
+  }
+
+  .about-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .about-line {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 13.5px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .about-line .num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    opacity: 0.6;
+    margin-top: 3px;
+    flex-shrink: 0;
+    width: 14px;
+  }
+
+  /* Input area */
+  .input-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: border-color 0.2s;
+  }
+
+  .input-card:focus-within {
+    border-color: var(--border-strong);
+  }
+
+  .input-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+    display: block;
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14.5px;
+    line-height: 1.65;
+    padding: 0.875rem 1rem;
+    resize: none;
+    min-height: 120px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  textarea::placeholder { color: var(--muted); opacity: 0.5; }
+
+  textarea:focus { border-color: rgba(0,217,163,0.3); }
+
+  .char-count {
+    text-align: right;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+    font-family: var(--mono);
+  }
+
+  /* Analyze button */
+  .btn {
+    width: 100%;
+    padding: 0.85rem;
+    background: var(--accent);
+    color: #0d0f11;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .btn:hover { opacity: 0.88; }
+  .btn:active { transform: scale(0.985); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,0,0.2);
+    border-top-color: #0d0f11;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Result card */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    margin-top: 1.25rem;
+    display: none;
+    animation: fadeSlide 0.3s ease;
+  }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .result-card.show { display: block; }
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .verdict {
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .verdict.positive { color: var(--accent); }
+  .verdict.negative { color: var(--red); }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-weight: 700;
+  }
+
+  .badge.positive {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid rgba(0,217,163,0.2);
+  }
+
+  .badge.negative {
+    background: var(--red-dim);
+    color: var(--red);
+    border: 1px solid rgba(255,94,94,0.2);
+  }
+
+  /* Confidence bar */
+  .conf-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .conf-label span:last-child {
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .bar-track {
+    background: var(--surface2);
+    border-radius: 100px;
+    height: 6px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 100px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 0%;
+  }
+
+  .bar-fill.positive { background: var(--accent); }
+  .bar-fill.negative { background: var(--red); }
+
+  /* Explanation */
+  .explanation {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 13.5px;
+    color: var(--muted);
+    line-height: 1.65;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 3rem;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--muted);
+    opacity: 0.5;
+    font-family: var(--mono);
+  }
+
+  .footer span { color: var(--accent); opacity: 1; }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="wrap">
+
+  <div class="chip">BERT · SST2 · 93.12% Accuracy</div>
+
+  <h1>GitHub PR<br/><span>Sentiment</span> Analyzer</h1>
+
+  <div class="about">
+    <div class="about-lines">
+      <div class="about-line">
+        <span class="num">01</span>
+        <span>Fine-tuned BERT-base-uncased on SST2 (67K samples) for binary sentiment classification — Positive or Negative.</span>
+      </div>
+      <div class="about-line">
+        <span class="num">02</span>
+        <span>Real PR comments scraped from microsoft/vscode, facebook/react, and tensorflow/tensorflow for inference testing.</span>
+      </div>
+      <div class="about-line">
+        <span class="num">03</span>
+        <span>3-epoch training with AdamW optimizer, linear warmup scheduler, and best-model checkpointing on Google Drive.</span>
+      </div>
+      <div class="about-line">
+        <span class="num">04</span>
+        <span>Achieved 93.12% accuracy and F1 score on the SST2 validation set — deployed for real-world GitHub comment analysis.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-card">
+    <label class="input-label" for="comment">Paste a PR comment or any text</label>
+    <textarea id="comment" placeholder="e.g. This fix breaks the existing auth flow and wasn't tested properly..."></textarea>
+    <div class="char-count"><span id="charCount">0</span> characters</div>
+  </div>
+
+  <button class="btn" id="analyzeBtn" onclick="analyze()">
+    <div class="spinner" id="spinner"></div>
+    <span id="btnText">Analyze Sentiment</span>
+  </button>
+
+  <div class="result-card" id="resultCard">
+    <div class="result-header">
+      <div class="verdict" id="verdict"></div>
+      <div class="badge" id="badge"></div>
+    </div>
+    <div class="conf-label">
+      <span>Confidence</span>
+      <span id="confVal"></span>
+    </div>
+    <div class="bar-track">
+      <div class="bar-fill" id="barFill"></div>
+    </div>
+    <div class="explanation" id="explanation"></div>
+  </div>
+
+  <div class="footer">
+    Built by XQOI &nbsp;·&nbsp; BERT-base-uncased &nbsp;·&nbsp; <span>93.12% F1</span>
+  </div>
+
+</div>
+
+<script>
+  const textarea = document.getElementById('comment');
+  const charCount = document.getElementById('charCount');
+
+  textarea.addEventListener('input', () => {
+    charCount.textContent = textarea.value.length;
+  });
+
+  async function analyze() {
+    const text = textarea.value.trim();
+    if (!text) return;
+
+    const btn = document.getElementById('analyzeBtn');
+    const spinner = document.getElementById('spinner');
+    const btnText = document.getElementById('btnText');
+    const resultCard = document.getElementById('resultCard');
+
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    btnText.textContent = 'Analyzing...';
+    resultCard.classList.remove('show');
+
+    try {
+      const BACKEND = "https://github-sentiment-api.onrender.com"; // replace after deploying to Render
+
+      const response = await fetch(`${BACKEND}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+
+      const result = await response.json();
+
+      const sentiment = result.sentiment;
+      const conf = parseFloat(result.confidence);
+      const explanation = sentiment === 'Positive'
+        ? 'The comment carries a constructive or approving tone.'
+        : 'The comment carries a critical or disapproving tone.';
+
+      document.getElementById('verdict').textContent = sentiment;
+      document.getElementById('verdict').className = 'verdict ' + sentiment.toLowerCase();
+
+      document.getElementById('badge').textContent = sentiment;
+      document.getElementById('badge').className = 'badge ' + sentiment.toLowerCase();
+
+      document.getElementById('confVal').textContent = (conf * 100).toFixed(1) + '%';
+
+      const bar = document.getElementById('barFill');
+      bar.className = 'bar-fill ' + sentiment.toLowerCase();
+      setTimeout(() => { bar.style.width = (conf * 100).toFixed(1) + '%'; }, 50);
+
+      document.getElementById('explanation').textContent = explanation;
+
+      resultCard.classList.add('show');
+
+    } catch (e) {
+      alert('Something went wrong. Please try again.');
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      btnText.textContent = 'Analyze Sentiment';
+    }
+  }
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) analyze();
+  });
+</script>
+</body>
+</html>
